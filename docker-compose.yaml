@@ -1,6 +1,222 @@
-version: '3.0'
+services:
+  # user Service
+  userservice:
+    container_name: user_service_container
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    ports:
+      - "8087:8087"
+    environment:
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672 # RabbitMQ URL
 
-service:
+    networks:
+      - app-networks
+    depends_on:
+      - rabbitmq
+      - redis
+    env_file:
+      - .env.test
+      - .env.prod
+
+
+  # Order Service
+  orderservice:
+    container_name: order_service_container
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    restart : always
+    ports:
+      - "8085:8085"
+    environment:
+      - DB_HOST=${ORDER_DB_HOST}
+      - DB_PORT=${ORDER_DB_PORT}
+      - DB_USERNAME=${ORDER_DB_USER}
+      - DB_PASSWORD=${ORDER_DB_PASSWORD}
+      - DB_NAME=${ORDER_DB_NAME}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672 # RabbitMQ URL
+    depends_on:
+        - rabbitmq
+        - orderdb
+    networks:
+      - app-networks
+    links:
+      - orderdb
+    env_file:
+      - .env.test
+      - .env.prod
+
+  # Product Service
+  productservice:
+    container_name: product_service_container
+    build:
+      context: ./product-service
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8086"
+    environment:
+      - DB_HOST=${PRODUCT_DB_HOST}
+      - DB_PORT=${PRODUCT_DB_PORT}
+      - DB_USERNAME=${PRODUCT_DB_USER}
+      - DB_PASSWORD=${PRODUCT_DB_PASSWORD}
+      - DB_NAME=${PRODUCT_DB_NAME}
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672 # RabbitMQ URL
+    depends_on:
+        - productdb
+        - rabbitmq
+    networks:
+      - app-networks
+    env_file:
+      - .env.test
+      - .env.prod
+
+     # RabbitMQ
+  rabbitmq:
+    container_name: rabbitmq_container
+    image: rabbitmq:3-management
+    ports:
+      - "${RABBITMQ_PORT_COMMAND}:${RABBITMQ_PORT_COMMAND}"
+      - "${RABBITMQ_PORT_CLIENT}:${RABBITMQ_PORT_CLIENT}"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+    - rabbitmq_data:/var/lib/rabbitmq
+    env_file:
+      - .env.test
+      - .env.prod
+    networks:
+      - app-networks
+  # MySQL cho Order Service
+  orderdb:
+    container_name: Orderdb_container
+    image: mysql:latest
+    restart : always
+    environment:
+      MYSQL_USER: ${ORDER_DB_USER}
+      MYSQL_PASSWORD: ${ORDER_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${ORDER_DB_PASSWORD}
+      MYSQL_DATABASE: ${ORDER_DB_NAME}
+    ports:
+      - "${ORDER_DB_PORT}:${ORDER_DB_PORT}"
+    volumes:
+        - mysql_data:/var/lib/mysql
+    networks:
+      - app-networks
+    env_file:
+      - .env.test
+      - .env.prod
+
+  # Posgresql cho Product Service
+  productdb:
+    container_name: productdb_container
+    image: postgres:latest
+    ports:
+      - "${PRODUCT_DB_PORT}:${PRODUCT_DB_PORT}"
+    environment:
+      POSTGRES_USER: "admin"
+      POSTGRES_PASSWORD: ${PRODUCT_DB_PASSWORD}
+      POSTGRES_DB: ${PRODUCT_DB_NAME}
+    volumes:
+       - productdb_data:/var/lib/postgresql/data
+    networks:
+      - app-networks
+    env_file:
+      - .env.test
+      - .env.prod
+
+  # Redis cho Auth Service
+  redis:
+    container_name: redis_container
+    image: redis:latest
+    ports:
+      - "${REDIS_PORT}:${REDIS_PORT}"
+    networks:
+      - app-networks
+    volumes:
+      - redis_data:/data
+    env_file:
+      - .env.test
+      - .env.prod
+
+  # API Gateway
   gateway:
-    image: ""
-      
+    container_name: gateway_container
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      - userservice
+      - orderservice
+      - productservice
+    networks:
+      - app-networks
+    env_file:
+      - .env.test
+      - .env.prod
+
+volumes:
+  mysql_data:
+  productdb_data:
+  redis_data:
+  rabbitmq_data:
+networks:
+  app-networks:
+    driver : bridge
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  # Next.js Frontend
+  # frontend:
+  #   image: node:16
+  #   working_dir: /app
+  #   volumes:
+  #     - ./frontend:/app
+  #   ports:
+  #     - "3004:3000"
+  #   command: "npm run dev"
+  #   environment:
+  #     - NEXT_PUBLIC_API_GATEWAY_URL=http://api-gateway:3000
+  #   depends_on:
+  #     - api-gateway
